@@ -4,9 +4,10 @@ dist/
 # Astro 生成的类型缓存
 .astro/
 
-# 依赖
+# 依赖与本地工具
 node_modules/
 .pnpm-store/
+.tools/
 
 # 环境与日志
 .env

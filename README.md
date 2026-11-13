@@ -13,17 +13,18 @@
 
 ## 一、环境要求
 
-- Node.js **18 以上**（[下载地址](https://nodejs.org/)）
-- 推荐 pnpm（`npm install -g pnpm`）；没有 pnpm 用 npm 也行，把下文的 `pnpm` 换成 `npm` 即可
+- Node.js **18 以上**（[下载地址](https://nodejs.org/)），npm 随 Node.js 一起安装
 
 ## 二、三个常用命令
 
 ```bash
-pnpm install     # 第一次使用时安装依赖（只需一次）
-pnpm dev         # 本地预览：http://localhost:4321，改文章会实时刷新
-pnpm build       # 构建正式网站到 dist/ 目录（发布前的自检）
-pnpm preview     # 本地预览构建产物（模拟线上效果）
+npm install     # 第一次使用时安装依赖（只需一次）
+npm run dev     # 本地预览：http://localhost:4321，改文章会实时刷新
+npm run build   # 构建正式网站到 dist/ 目录（发布前的自检）
+npm run preview # 本地预览构建产物（模拟线上效果）
 ```
+
+> 用 pnpm 也完全可以（`pnpm install` / `pnpm dev` …），但注意删除 `package-lock.json` 并改用 `pnpm-lock.yaml`，两种锁文件不要混用。
 
 ## 三、怎么写一篇文章
 
@@ -120,9 +121,6 @@ Blog/
 
 **Q：构建时报 frontmatter 错误？**
 检查是不是缺了 `title` / `description` / `pubDate`，或者日期格式不对（`2026-11-13` 这种就行）。
-
-**Q：pnpm 安装时提示 Ignored build scripts？**
-新版 pnpm 出于安全默认拦截依赖的安装脚本。本项目已通过 `pnpm-workspace.yaml` 信任了 `esbuild` 和 `sharp`；如果你的 pnpm 版本较老仍提示，运行 `pnpm approve-builds` 手动允许这两个包即可。用 `npm install` 则没有这个问题。
 
 **Q：公式不渲染？**
 行内公式用 `$...$`，独立公式用 `$$...$$`；`$` 和内容之间不要留空格（`$x$` ✅，`$ x $` ❌）。

@@ -1,5 +1,7 @@
 # 我的音频算法博客
 
+> 🌐 已上线：**https://zeitreisendekairot.github.io/**（GitHub Actions 自动部署，push 即发布）
+
 基于 [Astro](https://astro.build) 的静态博客，为**音频算法 / 深度学习**内容定制：
 
 - ✅ 数学公式渲染（KaTeX，写 `$...$` / `$$...$$` 即可）

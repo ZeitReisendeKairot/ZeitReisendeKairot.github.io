@@ -1,0 +1,16 @@
+# 构建产物
+dist/
+
+# Astro 生成的类型缓存
+.astro/
+
+# 依赖
+node_modules/
+.pnpm-store/
+
+# 环境与日志
+.env
+*.log
+
+# Windows 权限修复的备份（机器本地文件，不上传）
+.acl-recovery/

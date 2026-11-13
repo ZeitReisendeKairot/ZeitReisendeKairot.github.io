@@ -1,0 +1,20 @@
+---
+import { PROFILE_NAME } from '../consts';
+const year = new Date().getFullYear();
+---
+<footer class="site-footer">
+  <p>
+    © {year} {PROFILE_NAME} · 用 <a href="https://astro.build" target="_blank" rel="noopener">Astro</a> 构建
+  </p>
+</footer>
+
+<style>
+  .site-footer {
+    border-top: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 0.85rem;
+    text-align: center;
+    padding: 1.5rem 1rem 2rem;
+  }
+  .site-footer p { margin: 0; }
+</style>

@@ -1,0 +1,21 @@
+---
+// 文章详情页：把 src/content/blog/ 里的每篇 Markdown 渲染成独立页面
+// 网址就是 /blog/<文件名去掉 .md>/，例如 stft-intro.md -> /blog/stft-intro/
+import { getCollection, render } from 'astro:content';
+import BlogPost from '../../layouts/BlogPost.astro';
+
+export async function getStaticPaths() {
+  const posts = await getCollection('blog', ({ data }) => import.meta.env.DEV || !data.draft);
+  return posts.map((post) => ({
+    params: { id: post.id },
+    props: post,
+  }));
+}
+
+const post = Astro.props;
+const { Content } = await render(post);
+---
+
+<BlogPost {...post.data}>
+  <Content />
+</BlogPost>

@@ -1,0 +1,7 @@
+# pnpm 配置（pnpm v10+ 的设置都放在这个文件里）
+# 允许 esbuild / sharp 运行安装脚本（Astro 构建必需，pnpm 默认出于安全拦截）
+onlyBuiltDependencies:
+  - esbuild
+  - sharp
+# Windows 上避免符号链接（绕开 pnpm 的 ERR_PNPM_SYMLINK_FAILED 问题）
+nodeLinker: hoisted

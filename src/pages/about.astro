@@ -1,0 +1,21 @@
+---
+// 关于页：简单介绍你和这个博客
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { PROFILE_NAME } from '../consts';
+---
+
+<BaseLayout title="关于" description="关于我和这个博客">
+  <article class="prose">
+    <h1>关于</h1>
+    <p>你好，我是 {PROFILE_NAME}。</p>
+    <p>这个博客主要记录两类内容：</p>
+    <ul>
+      <li><strong>音频算法</strong>：数字信号处理、语音增强、编解码、回声消除……</li>
+      <li><strong>深度学习</strong>：模型结构、论文阅读、训练技巧、工程实践……</li>
+    </ul>
+    <p>写博客的初衷很简单：把学到的东西讲清楚。讲不清楚的地方，就是还没真正学懂的地方。</p>
+
+    <h2>联系方式</h2>
+    <p>TODO：在这里放上你的邮箱 / GitHub / 主页等联系方式。</p>
+  </article>
+</BaseLayout>

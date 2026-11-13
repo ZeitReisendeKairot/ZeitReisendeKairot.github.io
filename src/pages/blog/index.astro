@@ -1,0 +1,25 @@
+---
+// 文章列表页：所有文章，按发布时间倒序
+import { getCollection } from 'astro:content';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import FormattedDate from '../../components/FormattedDate.astro';
+
+const posts = (await getCollection('blog', ({ data }) => import.meta.env.DEV || !data.draft))
+  .sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf());
+---
+
+<BaseLayout title="全部文章">
+  <h1>全部文章</h1>
+  <ul class="post-list">
+    {posts.map((post) => (
+      <li class="post-item">
+        <h2><a href={`/blog/${post.id}/`}>{post.data.title}</a></h2>
+        <div class="meta-line">
+          <FormattedDate date={post.data.pubDate} />
+          {post.data.tags.map((tag) => <span class="tag">#{tag}</span>)}
+        </div>
+        <p class="desc">{post.data.description}</p>
+      </li>
+    ))}
+  </ul>
+</BaseLayout>

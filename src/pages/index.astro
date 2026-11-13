@@ -1,0 +1,34 @@
+---
+// 首页：hero 介绍 + 最新 5 篇文章
+import { getCollection } from 'astro:content';
+import BaseLayout from '../layouts/BaseLayout.astro';
+import FormattedDate from '../components/FormattedDate.astro';
+
+// 本地 dev 预览时显示草稿，正式构建时只显示非草稿
+const posts = (await getCollection('blog', ({ data }) => import.meta.env.DEV || !data.draft))
+  .sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf())
+  .slice(0, 5);
+---
+
+<BaseLayout title="首页">
+  <section class="hero">
+    <h1>你好，欢迎来到我的博客 👋</h1>
+    <p>这里记录我在音频算法与深度学习路上的学习笔记、代码实践和踩坑经验。写下来，是为了把知识真正想清楚。</p>
+  </section>
+
+  <h2 class="section-title">最新文章</h2>
+  <ul class="post-list">
+    {posts.map((post) => (
+      <li class="post-item">
+        <h2><a href={`/blog/${post.id}/`}>{post.data.title}</a></h2>
+        <div class="meta-line">
+          <FormattedDate date={post.data.pubDate} />
+          {post.data.tags.map((tag) => <span class="tag">#{tag}</span>)}
+        </div>
+        <p class="desc">{post.data.description}</p>
+      </li>
+    ))}
+  </ul>
+
+  <p class="more"><a href="/blog/">查看全部文章 →</a></p>
+</BaseLayout>

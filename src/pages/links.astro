@@ -1,0 +1,114 @@
+---
+// ══════════════════════════════════════════════════════════════════
+// 友情链接页 —— 你的第一个"手写页面"
+// ──────────────────────────────────────────────────────────────────
+// 【原理】Astro 的铁律：src/pages/ 目录下的每个文件 = 网站的一个页面。
+//   本文件叫 links.astro      → 网址就是 /links/
+//   index.astro 叫"index"     → 它就是首页 /
+//   blog/index.astro          → /blog/（子文件夹也可以）
+//   所以"加一个页面" = "在 pages 文件夹里新建一个 .astro 文件"，没有别的步骤。
+//
+// 【.astro 文件的结构】永远分成两段：
+//   ① 上面这对 --- 之间：写 JS/TS 逻辑（准备数据、import 组件），构建时执行
+//   ② --- 之后的全部：写 HTML 模板（页面的骨架），逻辑里的变量可以直接用
+// ══════════════════════════════════════════════════════════════════
+
+// ① 逻辑区：引入全站布局（自动带上页眉、页脚、全局样式）
+import BaseLayout from '../layouts/BaseLayout.astro';
+
+// 友链数据先直接写在页面里。以后数量多了，可以挪到单独的文件甚至 JSON，
+// 页面模板完全不用改——"数据"和"长相"分离，这是现代网页的基本思路。
+const friends = [
+  {
+    name: 'Astro 官方文档（中文）',
+    desc: '本站就是用它搭建的框架，教程和参考写得很清楚',
+    url: 'https://docs.astro.build/zh-cn/',
+  },
+  {
+    name: 'MDN Web 文档',
+    desc: 'HTML / CSS / JavaScript 的权威参考，前端学习者的根据地',
+    url: 'https://developer.mozilla.org/zh-CN/',
+  },
+  {
+    name: 'librosa',
+    desc: 'Python 音频分析库，做 STFT、频谱分析的必备工具',
+    url: 'https://librosa.org',
+  },
+];
+---
+
+{/* ② 模板区：套上 BaseLayout（title 会显示在浏览器标签页上） */}
+<BaseLayout title="友链" description="我常去的网站和朋友们">
+  <article class="prose">
+    <h1>友情链接 🔗</h1>
+    <p>
+      这里收集我常看的网站。如果你想交换友链，欢迎在
+      <a href="https://github.com/ZeitReisendeKairot" target="_blank" rel="noopener">GitHub</a>
+      上联系我。
+    </p>
+
+    {/* 大括号 {} 里可以写 JS 表达式：把上面 friends 数组逐个渲染成卡片 */}
+    <ul class="friend-list">
+      {friends.map((f) => (
+        <li class="friend-item">
+          {/* 站外链接记得带 target="_blank"（新标签页打开）和 rel="noopener"（安全惯例） */}
+          <a class="friend-name" href={f.url} target="_blank" rel="noopener">
+            {f.name}
+          </a>
+          <p class="friend-desc">{f.desc}</p>
+        </li>
+      ))}
+    </ul>
+
+    <h2>附：一个"按钮式"链接是怎么做的？</h2>
+    <p>
+      普通链接只是文字；给它套一个 CSS 类（加内边距、底色、圆角），
+      就变成了下面这样的"文字按钮"。它本质还是 <code>&lt;a&gt;</code> 标签，
+      按 F12 检查它，能看到 .btn 类的样式规则：
+    </p>
+    <p>
+      <a class="btn" href="https://github.com/ZeitReisendeKairot" target="_blank" rel="noopener">
+        我的 GitHub 主页 →
+      </a>
+    </p>
+  </article>
+</BaseLayout>
+
+{/* <style> 块里的样式只对本页面生效（Astro 的 scoped 样式，不会影响其他页面）。
+    颜色尽量用 global.css 里的 --变量，全站风格才能保持统一 */}
+<style>
+  .friend-list {
+    list-style: none; /* 去掉列表默认圆点 */
+    padding: 0;
+  }
+  .friend-item {
+    padding: 1rem 1.25rem;
+    margin-bottom: 0.9rem;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+  .friend-name {
+    font-weight: 600;
+    color: var(--accent);
+    text-decoration: none;
+  }
+  .friend-name:hover { text-decoration: underline; }
+  .friend-desc {
+    margin: 0.35rem 0 0;
+    color: var(--muted);
+    font-size: 0.92rem;
+  }
+
+  /* ↓↓↓ "文字按钮"的全部秘密：给 <a> 加样式，它就看起来像按钮 ↓↓↓ */
+  .btn {
+    display: inline-block;             /* 让它能有内边距（a 默认是行内元素） */
+    background: var(--accent);         /* 主题色底 */
+    color: #ffffff;                    /* 白字 */
+    padding: 0.55rem 1.2rem;           /* 上下、左右的呼吸空间 */
+    border-radius: 8px;                /* 圆角 */
+    text-decoration: none;             /* 去掉下划线 */
+    transition: opacity 0.15s ease;    /* 悬停变化加一点过渡动画 */
+  }
+  .btn:hover { opacity: 0.85; }        /* 悬停时微微变透明，暗示"可点" */
+</style>

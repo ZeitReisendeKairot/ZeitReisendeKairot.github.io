@@ -15,3 +15,7 @@ node_modules/
 
 # Windows 权限修复的备份（机器本地文件，不上传）
 .acl-recovery/
+
+# 防止误运行 pnpm 产生的残留被误提交（本项目统一用 npm）
+pnpm-lock.yaml
+pnpm-workspace.yaml

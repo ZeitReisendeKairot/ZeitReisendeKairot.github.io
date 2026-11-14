@@ -24,7 +24,11 @@ npm run build   # 构建正式网站到 dist/ 目录（发布前的自检）
 npm run preview # 本地预览构建产物（模拟线上效果）
 ```
 
-> 用 pnpm 也完全可以（`pnpm install` / `pnpm dev` …），但注意删除 `package-lock.json` 并改用 `pnpm-lock.yaml`，两种锁文件不要混用。
+> ⚠️ **本项目统一使用 npm，请不要在这个项目里运行 pnpm**
+> 原因：两种包管理器会争夺 `node_modules/`——pnpm 发现不是自己装的，会把所有包挪走重装一遍，
+> 还会触发它自己的"构建脚本审批"报错，把环境搞乱（修起来要重装一次依赖）。
+> package.json 里的 `packageManager` 字段已声明 npm，corepack 会在你误运行 pnpm 时直接给出明确报错拦下来。
+> 如果你就是想改用 pnpm：先删 `package-lock.json`，再 `pnpm install` 生成 `pnpm-lock.yaml`，并同步修改 CI 配置——不推荐，除非你清楚后果。
 
 ## 三、怎么写一篇文章
 

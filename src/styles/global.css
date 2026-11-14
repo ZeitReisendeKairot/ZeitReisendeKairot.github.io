@@ -1,90 +1,185 @@
-/* ========== 全局样式 ========== */
+/* ══════════════════════════════════════════════════════════════════
+   全局样式表（CSS）
+   ──────────────────────────────────────────────────────────────────
+   这份文件控制整个博客的「外观」：颜色、字体、间距、圆角、悬停效果。
+   它在 src/layouts/BaseLayout.astro 里被 import，对全站所有页面生效。
 
+   CSS 的语法就一句话：
+       选择器 { 属性: 值; }
+   「选择器」决定样式作用在谁身上，「属性: 值」决定改成什么样。
+   例如  a { color: red; }  = 所有链接(a)的颜色(color)变成红色(red)。
+
+   常用选择器速查：
+       p            所有 <p> 标签（标签选择器）
+       .hero        所有 class="hero" 的元素（. 开头 = 类选择器）
+       .prose h2    .prose 内部所有的 h2（空格 = 「里面的」，后代选择器）
+       a:hover      鼠标悬停在链接上时的状态（: = 伪类，描述状态）
+
+   改完保存，浏览器（本地预览）会自动刷新，马上能看到效果。
+   改坏了不要慌：git 里存着每一版，随时可以回退（git checkout -- 此文件）。
+   ══════════════════════════════════════════════════════════════════ */
+
+
+/* ────────────────────────────────────────────────
+   一、全局调色盘与主题变量（⭐ 想换风格先改这里）
+   ────────────────────────────────────────────────
+   :root 代表「整个文档」，在这里定义的 --xxx 叫「CSS 变量」，
+   相当于给颜色/尺寸起个名字，其他地方用 var(--名字) 来引用。
+   好处：想换主题色时只改这一处，全站跟着变。
+
+   试一试：把 --accent 改成 #e11d48（玫红）或 #059669（绿）保存看看。
+  */
 :root {
+  /* 背景色：整个页面的底色。现在是极浅的暖白 */
   --bg: #fdfdfc;
+
+  /* 前景色：正文的文字颜色，现在是深灰蓝 */
   --fg: #1f2937;
+
+  /* 「弱化」颜色：日期、摘要这类次要信息的文字颜色 */
   --muted: #64748b;
+
+  /* ⭐ 主题色：链接、引用块竖线、悬停高亮都用它，全站的「性格色」 */
   --accent: #0369a1;
+
+  /* 主题色的超浅版本：引用块的底色 */
   --accent-light: #e0f2fe;
+
+  /* 边框线颜色：卡片描边、表格线、标题下划线 */
   --border: #e5e7eb;
+
+  /* 代码块的深色底（配合 Shiki 的 github-dark 高亮主题） */
   --code-bg: #0d1117;
+
+  /* 文章列表卡片的底色 */
   --card-bg: #ffffff;
+
+  /* ⭐ 内容区最大宽度：760px 左右阅读体验最好（一行字数适中）。
+     想要更宽敞的版面可以改成 860px 试试 */
+  --content-width: 760px;
+
+  /* ⭐ 正文字体栈：浏览器从左到右挑第一个可用的。
+     中文用户 Windows 上最终一般落到「微软雅黑」。
+     想换风格可以试试 serif 结尾的衬线字体（更"文艺"） */
+  --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
 }
 
+
+/* ────────────────────────────────────────────────
+   二、基础重置与全局默认
+   ──────────────────────────────────────────────── */
+
+/* 通配符选择器 *：对所有元素生效。
+   box-sizing: border-box 让「宽度」计算包含内边距和边框，
+   是现代网页布局的标准习惯，避免宽度算着算着就溢出 */
 * { box-sizing: border-box; }
 
 html {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
-    "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  font-family: var(--font-body); /* 用上面定义的字体栈 */
+  /* 告诉浏览器本站是浅色主题：滚动条、表单控件会配套成浅色 */
   color-scheme: light;
 }
 
 body {
-  margin: 0;
-  background: var(--bg);
-  color: var(--fg);
-  font-size: 16px;
-  line-height: 1.8;
-  -webkit-font-smoothing: antialiased;
+  margin: 0;              /* 去掉浏览器默认的外边距，让内容顶格 */
+  background: var(--bg);  /* 页面底色 */
+  color: var(--fg);       /* 默认文字颜色 */
+  font-size: 16px;        /* 基准字号，其他字号多用 rem 相对它计算 */
+  line-height: 1.8;       /* 行高 1.8 倍：中文排版比较吃行距，1.8 读起来舒服 */
+  -webkit-font-smoothing: antialiased; /* 字体边缘抗锯齿，显示更细腻 */
 }
 
+/* main 是每页的主内容容器（见 BaseLayout.astro 里的 <main>） */
 main {
-  max-width: 760px;
-  margin: 0 auto;
-  padding: 2.5rem 1.25rem 4rem;
+  max-width: var(--content-width); /* 最宽就这么多，大屏幕上不会变成"长长一行" */
+  margin: 0 auto;                  /* 左右 auto = 水平居中，经典写法 */
+  padding: 2.5rem 1.25rem 4rem;    /* 上 2.5 / 左右 1.25 / 下 4 的内边距（rem≈16px） */
 }
 
+/* 全站链接的默认样子：用主题色、平时不加下划线 */
 a { color: var(--accent); text-decoration: none; }
-a:hover { text-decoration: underline; }
+a:hover { text-decoration: underline; } /* 悬停时才出现下划线 */
 
+/* 标题行高收窄一点：标题字大，行距太开反而难看 */
 h1, h2, h3, h4 { line-height: 1.35; }
 
-/* ---------- 首页 hero 与列表 ---------- */
 
+/* ────────────────────────────────────────────────
+   三、首页：hero 区块 + 文章列表
+   ────────────────────────────────────────────────
+   .hero 对应首页（src/pages/index.astro）顶部那块
+   「你好，欢迎来到我的博客」的欢迎区 */
 .hero { padding: 1.5rem 0 2.5rem; }
 .hero h1 { font-size: 1.9rem; margin: 0 0 .6rem; }
-.hero p { color: var(--muted); margin: 0; }
+.hero p { color: var(--muted); margin: 0; } /* 副标题用弱化色 */
 
+/* 「最新文章」「全部文章」这类小节标题 */
 .section-title { font-size: 1.2rem; margin: 2.2rem 0 1rem; }
 
+/* 文章列表：去掉列表默认的圆点和缩进 */
 .post-list { list-style: none; margin: 0; padding: 0; }
+
+/* 每篇文章 = 一张小卡片（对应 index.astro 里的 <li class="post-item">） */
 .post-item {
-  padding: 1rem 1.25rem;
-  margin-bottom: 0.9rem;
+  padding: 1rem 1.25rem;     /* 卡片内边距 */
+  margin-bottom: 0.9rem;     /* 卡片之间的间距 */
   background: var(--card-bg);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  transition: box-shadow 0.15s ease;
+  border-radius: 10px;       /* 圆角，数值越大越圆 */
+  transition: box-shadow 0.15s ease; /* 阴影变化加 0.15 秒过渡动画 */
 }
+/* 鼠标悬停时浮起一层浅浅的阴影，制造"可以点"的感觉 */
 .post-item:hover { box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08); }
-.post-item h2 { margin: 0 0 .25rem; font-size: 1.15rem; }
-.post-item h2 a { color: var(--fg); }
-.post-item h2 a:hover { color: var(--accent); text-decoration: none; }
-.post-item .desc { margin: .35rem 0 0; color: var(--muted); font-size: 0.92rem; }
-.post-item .meta-line { color: var(--muted); font-size: 0.85rem; }
 
+.post-item h2 { margin: 0 0 .25rem; font-size: 1.15rem; }
+.post-item h2 a { color: var(--fg); }                    /* 标题平时是正文色 */
+.post-item h2 a:hover { color: var(--accent); text-decoration: none; } /* 悬停变主题色 */
+.post-item .desc { margin: .35rem 0 0; color: var(--muted); font-size: 0.92rem; } /* 摘要 */
+.post-item .meta-line { color: var(--muted); font-size: 0.85rem; } /* 日期和标签行 */
+
+/* 「查看全部文章 →」那行，靠右对齐 */
 .more { text-align: right; margin-top: 1.5rem; }
 
-/* ---------- 文章排版（.prose）---------- */
+
+/* ────────────────────────────────────────────────
+   四、文章正文排版（.prose）⭐ 博客的"脸面"
+   ────────────────────────────────────────────────
+   .prose 是文章详情页包裹正文的容器
+   （见 src/layouts/BlogPost.astro 里的 <article class="prose">）。
+   Markdown 渲染出来的 h2/p/ul/table 都落在它里面，
+   所以「让文章好看」的样式基本都写在这一节。 */
 
 .prose h1 { font-size: 1.9rem; margin: 0 0 .5rem; }
+/* 二级标题（Markdown 里的 ##）：大标题下的分隔线，文章的"骨架感" */
 .prose h2 { font-size: 1.45rem; margin-top: 2.4rem; padding-bottom: .3rem; border-bottom: 1px solid var(--border); }
 .prose h3 { font-size: 1.18rem; margin-top: 1.8rem; }
+
+/* 段落：上下各留 1rem 呼吸空间 */
 .prose p { margin: 1rem 0; }
+
+/* 列表缩进和条目间距 */
 .prose ul, .prose ol { padding-left: 1.5rem; }
 .prose li { margin: .3rem 0; }
+
+/* 引用块（Markdown 里的 >）：左侧主题色竖线 + 浅色底，像"便签" */
 .prose blockquote {
   margin: 1.2rem 0;
   padding: .6rem 1.1rem;
   border-left: 4px solid var(--accent);
   background: var(--accent-light);
-  border-radius: 0 8px 8px 0;
+  border-radius: 0 8px 8px 0; /* 左边是竖线所以不圆角，右边圆角 */
   color: #334155;
 }
 .prose blockquote p { margin: .3rem 0; }
+
+/* 图片：最大不超出正文宽度，加圆角 */
 .prose img { max-width: 100%; border-radius: 8px; }
+
+/* 水平分割线（Markdown 里的 ---） */
 .prose hr { border: none; border-top: 1px solid var(--border); margin: 2.5rem 0; }
 
+/* 表格：合并边框、通栏宽度；小屏幕上可横向滚动（长公式表不撑破版面） */
 .prose table {
   border-collapse: collapse;
   width: 100%;
@@ -94,9 +189,10 @@ h1, h2, h3, h4 { line-height: 1.35; }
   overflow-x: auto;
 }
 .prose th, .prose td { border: 1px solid var(--border); padding: .45rem .7rem; text-align: left; }
-.prose th { background: #f1f5f9; }
+.prose th { background: #f1f5f9; } /* 表头底色 */
 
-/* 行内代码 */
+/* 行内代码（Markdown 里的 `xxx`）：浅灰底 + 小圆角 + 玫红字，
+   和正文一眼区分开。 :not(pre) 是"排除代码块"——代码块另有一套样式 */
 .prose :not(pre) > code {
   background: #f1f5f9;
   border: 1px solid var(--border);
@@ -106,7 +202,9 @@ h1, h2, h3, h4 { line-height: 1.35; }
   color: #9d174d;
 }
 
-/* 代码块：颜色由 Shiki 内置主题负责，这里做圆角和横向滚动 */
+/* 代码块（Markdown 里的 ```xxx```）：
+   语法配色由 Astro 内置的 Shiki（github-dark 主题）在构建时直接生成，
+   这里只负责圆角、内边距和横向滚动 */
 .prose pre {
   border-radius: 10px;
   padding: 1rem 1.25rem;
@@ -116,19 +214,27 @@ h1, h2, h3, h4 { line-height: 1.35; }
   margin: 1.3rem 0;
 }
 
-/* KaTeX 独立公式：小屏幕上允许横向滚动 */
+/* KaTeX 独立公式（Markdown 里的 $$...$$）：
+   长公式在手机上允许左右滑动，而不是被截断 */
 .katex-display { overflow-x: auto; overflow-y: hidden; padding: .2rem 0; }
 
-/* ---------- 文章头部信息 ---------- */
 
+/* ────────────────────────────────────────────────
+   五、文章页头部：日期 / 标签 / 草稿徽章
+   ────────────────────────────────────────────────
+   对应 BlogPost.astro 里标题下方那行「发布于 … #标签」 */
+
+/* 用 flex 布局把日期和标签排成一行，放不下自动换行 */
 .post-header .meta {
   color: var(--muted);
   font-size: 0.92rem;
   display: flex;
   flex-wrap: wrap;
-  gap: .6rem 1rem;
+  gap: .6rem 1rem;      /* 行间距 0.6rem / 列间距 1rem */
   align-items: center;
 }
+
+/* 标签小胶囊：border-radius 999px 直接变成全圆角"药丸"形 */
 .tag {
   background: #f1f5f9;
   border: 1px solid var(--border);
@@ -137,6 +243,8 @@ h1, h2, h3, h4 { line-height: 1.35; }
   font-size: 0.8rem;
   color: var(--muted);
 }
+
+/* 「草稿」徽章：琥珀色警示配色，一眼看出这篇文章还没发布 */
 .badge {
   display: inline-block;
   background: #fef3c7;
@@ -147,3 +255,11 @@ h1, h2, h3, h4 { line-height: 1.35; }
   padding: .1em .6em;
   margin-bottom: .6rem;
 }
+
+/* ══════════════════════════════════════════════════════════════════
+   备注：本文件不是全部样式！页眉/页脚的样式写在各自组件内部：
+     src/components/Header.astro  文件底部的 <style> 块（页眉导航）
+     src/components/Footer.astro  文件底部的 <style> 块（页脚）
+   组件里这种 <style> 是「scoped 作用域」的：只对当前组件生效，
+   不会互相污染。全局的归 global.css，局部的归组件，各管各的。
+   ══════════════════════════════════════════════════════════════════ */

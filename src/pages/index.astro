@@ -8,13 +8,14 @@ import FormattedDate from '../components/FormattedDate.astro';
 const posts = (await getCollection('blog', ({ data }) => import.meta.env.DEV || !data.draft))
   .sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf())
   .slice(0, 5);
----
 
+// <p>用来换行
+---
 <BaseLayout title="首页">
   <section class="hero">
-    <h1>你好，欢迎来到我的博客 👋</h1>
+    <h1>学习与记录 👋</h1>
     <p>
-      这里记录我在音频算法与深度学习路上的学习笔记、代码实践和踩坑经验。写下来，是为了把知识真正想清楚。
+      主要用来记录：深度学习、语音算法。<p>目标是一边学习、一边输出。
       {/* ↓ 内嵌链接示范：正文里的跳转就是这样写的 <a href="网址">显示文字</a> */}
       想了解我可以看<a href="/about/">关于页</a>，我常去的网站都放在<a href="/links/">友链页</a>。
     </p>

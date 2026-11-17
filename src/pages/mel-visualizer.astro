@@ -1,0 +1,325 @@
+---
+// ══════════════════════════════════════════════════════════════════
+// 交互式频谱实验室：拖动参数，实时看频谱变化
+// ──────────────────────────────────────────────────────────────────
+// 这是一个"纯前端"工具页：音频解码、FFT、梅尔滤波器组全部用
+// 浏览器里的 JavaScript 现场计算，不需要服务器——静态博客就能跑。
+// 文章《用眼睛"听"出伪造语音》里通过 iframe 嵌入了本页。
+// ══════════════════════════════════════════════════════════════════
+import BaseLayout from '../layouts/BaseLayout.astro';
+---
+
+<BaseLayout title="交互式频谱实验室" description="在线调节 n_fft / hop / n_mels / fmax，实时观察频谱图的变化">
+  <article class="prose lab">
+    <h1>🎛️ 交互式频谱实验室</h1>
+    <p>
+      加载文章《用眼睛"听"出伪造语音》里的三段音频，拖动下面的参数，频谱图<b>实时重新计算</b>。
+      试试：把 n_fft 从 256 拉到 4096，观察频率分辨率和时间分辨率的跷跷板效应。
+    </p>
+
+    <div class="panel">
+      <div class="row">
+        <label>音频
+          <select id="audioSel">
+            <option value="/audio/rvf-real.wav" selected>真实语音（LJSpeech）</option>
+            <option value="/audio/rvf-melgan.wav">伪造 A：MelGAN</option>
+            <option value="/audio/rvf-hifigan.wav">伪造 B：HiFi-GAN</option>
+          </select>
+        </label>
+        <label>频谱类型
+          <select id="modeSel">
+            <option value="mel" selected>梅尔谱（人耳视角）</option>
+            <option value="lin">线性频谱（物理视角）</option>
+          </select>
+        </label>
+        <label>n_fft（窗长）
+          <select id="nfftSel">
+            <option>256</option><option>512</option>
+            <option selected>1024</option>
+            <option>2048</option><option>4096</option>
+          </select>
+        </label>
+      </div>
+      <div class="row">
+        <label>hop（跳步）<span id="hopVal" class="val"></span>
+          <input type="range" id="hopRange" min="64" max="1024" step="64" value="256" />
+        </label>
+        <label class="melOnly">n_mels（梅尔滤波器数）<span id="nmelVal" class="val"></span>
+          <input type="range" id="nmelRange" min="16" max="256" step="4" value="80" />
+        </label>
+        <label class="melOnly">fmax（最高频率）<span id="fmaxVal" class="val"></span>
+          <input type="range" id="fmaxRange" min="2000" max="11000" step="500" value="8000" />
+        </label>
+        <label>动态范围<span id="dbVal" class="val"></span>
+          <input type="range" id="dbRange" min="40" max="120" step="10" value="80" />
+        </label>
+      </div>
+      <p class="readout" id="readout">加载中…</p>
+    </div>
+
+    <canvas id="spec" width="1040" height="430"></canvas>
+
+    <h2>参数怎么影响频谱？</h2>
+    <ul>
+      <li><b>n_fft 越大</b>：频率分得越细（Δf = sr/n_fft 越小），但时间上越"糊"——不确定性原理的现场演示</li>
+      <li><b>hop 越大</b>：时间帧越稀疏，计算快了，快速瞬态（爆破音）会丢</li>
+      <li><b>n_mels 越多</b>：频率细节越多，也越接近线性谱；越少越"概括"——80 是 TTS 系统的经典值</li>
+      <li><b>fmax</b>：人耳能量集中在低频，砍掉高频往往不损失听感信息——这正是梅尔谱"压缩"的精髓</li>
+    </ul>
+  </article>
+</BaseLayout>
+
+<style>
+  .lab .panel {
+    background: #f8fafc;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1rem 1.25rem;
+    margin: 1rem 0;
+  }
+  .lab .row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem 2rem;
+    margin: 0.4rem 0;
+  }
+  .lab label {
+    display: flex;
+    flex-direction: column;
+    font-size: 0.9rem;
+    color: var(--muted);
+    gap: 0.3rem;
+  }
+  .lab .val { color: var(--accent); font-weight: 600; }
+  .lab select {
+    font: inherit;
+    padding: 0.25rem 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: #fff;
+  }
+  .lab input[type='range'] { width: 180px; }
+  .lab .readout {
+    font-size: 0.88rem;
+    color: var(--muted);
+    margin: 0.6rem 0 0;
+    font-family: ui-monospace, Consolas, monospace;
+  }
+  .lab #spec {
+    width: 100%;
+    background: #000004;
+    border-radius: 10px;
+    display: block;
+  }
+</style>
+
+<script>
+  // ─────────────────────────── 工具函数 ───────────────────────────
+
+  // 迭代式 radix-2 FFT（原位计算，输入 re/im 会被修改）
+  function fft(re, im) {
+    const n = re.length;
+    // 位反转重排
+    for (let i = 1, j = 0; i < n; i++) {
+      let bit = n >> 1;
+      for (; j & bit; bit >>= 1) j ^= bit;
+      j ^= bit;
+      if (i < j) { [re[i], re[j]] = [re[j], re[i]]; [im[i], im[j]] = [im[j], im[i]]; }
+    }
+    // 蝶形运算
+    for (let len = 2; len <= n; len <<= 1) {
+      const ang = (-2 * Math.PI) / len;
+      const wRe = Math.cos(ang), wIm = Math.sin(ang);
+      for (let i = 0; i < n; i += len) {
+        let curRe = 1, curIm = 0;
+        for (let k = 0; k < len / 2; k++) {
+          const uRe = re[i + k], uIm = im[i + k];
+          const vRe = re[i + k + len / 2] * curRe - im[i + k + len / 2] * curIm;
+          const vIm = re[i + k + len / 2] * curIm + im[i + k + len / 2] * curRe;
+          re[i + k] = uRe + vRe; im[i + k] = uIm + vIm;
+          re[i + k + len / 2] = uRe - vRe; im[i + k + len / 2] = uIm - vIm;
+          const nRe = curRe * wRe - curIm * wIm;
+          curIm = curRe * wIm + curIm * wRe; curRe = nRe;
+        }
+      }
+    }
+  }
+
+  const hz2mel = (f) => 2595 * Math.log10(1 + f / 700); // HTK 梅尔刻度
+  const mel2hz = (m) => 700 * (10 ** (m / 2595) - 1);
+
+  // 三角形梅尔滤波器组：返回 [n_mels][n_bins] 矩阵
+  function melFilterbank(nMels, nFft, sr, fmax) {
+    const nBins = nFft / 2 + 1;
+    const melHi = hz2mel(Math.min(fmax, sr / 2));
+    const centers = Array.from({ length: nMels + 2 }, (_, i) => mel2hz((melHi * i) / (nMels + 1)));
+    const hzPerBin = sr / nFft;
+    const fb = Array.from({ length: nMels }, () => new Float64Array(nBins));
+    for (let m = 0; m < nMels; m++) {
+      const left = centers[m], mid = centers[m + 1], right = centers[m + 2];
+      for (let b = 0; b < nBins; b++) {
+        const f = b * hzPerBin;
+        if (f >= left && f <= mid && mid > left) fb[m][b] = (f - left) / (mid - left);
+        else if (f > mid && f <= right && right > mid) fb[m][b] = (right - f) / (right - mid);
+      }
+    }
+    return fb;
+  }
+
+  // magma 配色（采样 16 个色标，线性插值）
+  const MAGMA = ['#000004', '#1d1147', '#3b0f70', '#51127c', '#822681', '#b63679', '#e65164', '#fb8861', '#fec287', '#fcfdbf'];
+  function magma(t) {
+    const stops = MAGMA.length - 1;
+    const x = Math.max(0, Math.min(1, t)) * stops;
+    const i = Math.floor(x), f = x - i;
+    const a = MAGMA[i] || '#000004', b = MAGMA[Math.min(i + 1, stops)];
+    const pa = [1, 3, 5].map((k) => parseInt(a.slice(k, k + 2), 16));
+    const pb = [1, 3, 5].map((k) => parseInt(b.slice(k, k + 2), 16));
+    return `rgb(${pa.map((v, k) => Math.round(v + f * (pb[k] - v))).join(',')})`;
+  }
+
+  // ─────────────────────────── 主逻辑 ───────────────────────────
+  const $ = (id) => document.getElementById(id);
+  let audio = null;      // { data: Float32Array, sr: number }
+  let timer = null;
+
+  async function loadAudio(url) {
+    const res = await fetch(url);
+    const buf = await res.arrayBuffer();
+    const ctx = new AudioContext({ sampleRate: 22050 });
+    const decoded = await ctx.decodeAudioData(buf);
+    return { data: decoded.getChannelData(0), sr: decoded.sampleRate };
+  }
+
+  function computeAndDraw() {
+    if (!audio) return;
+    const t0 = performance.now();
+    const nFft = parseInt($('nfftSel').value, 10);
+    const hop = parseInt($('hopRange').value, 10);
+    const nMels = parseInt($('nmelRange').value, 10);
+    const fmax = parseInt($('fmaxRange').value, 10);
+    const topDb = parseInt($('dbRange').value, 10);
+    const mode = $('modeSel').value;
+    const { data, sr } = audio;
+
+    // 分帧 + 汉宁窗 + FFT → 功率谱
+    const nBins = nFft / 2 + 1;
+    const win = Array.from({ length: nFft }, (_, i) => 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / nFft));
+    const frames = Math.max(1, Math.floor((data.length - nFft) / hop) + 1);
+    const power = new Float64Array(frames * nBins); // 每帧功率谱展平存放
+    const re = new Float64Array(nFft), im = new Float64Array(nFft);
+    for (let f = 0; f < frames; f++) {
+      const off = f * hop;
+      for (let i = 0; i < nFft; i++) { re[i] = data[off + i] * win[i]; im[i] = 0; }
+      fft(re, im);
+      for (let b = 0; b < nBins; b++) power[f * nBins + b] = re[b] * re[b] + im[b] * im[b];
+    }
+
+    // 第二步：线性 → 梅尔（或直接用线性）
+    let rows, rowHz; // rows: 每行的数据数组; rowHz: 每行对应的频率（用于坐标轴）
+    if (mode === 'mel') {
+      const fb = melFilterbank(nMels, nFft, sr, fmax);
+      rows = Array.from({ length: nMels }, (_, m) => {
+        const row = new Float64Array(frames);
+        for (let f = 0; f < frames; f++) {
+          let s = 0;
+          for (let b = 0; b < nBins; b++) s += fb[m][b] * power[f * nBins + b];
+          row[f] = s;
+        }
+        return row;
+      });
+      const melHi = hz2mel(Math.min(fmax, sr / 2));
+      rowHz = Array.from({ length: nMels }, (_, m) => mel2hz((melHi * (m + 1)) / (nMels + 1)));
+    } else {
+      rows = Array.from({ length: nBins }, (_, b) => {
+        const row = new Float64Array(frames);
+        for (let f = 0; f < frames; f++) row[f] = power[f * nBins + b];
+        return row;
+      });
+      rowHz = Array.from({ length: nBins }, (_, b) => (b * sr) / nFft);
+    }
+
+    // 第三步：转 dB（相对最大值），限制动态范围
+    let maxV = 0;
+    for (const r of rows) for (const v of r) if (v > maxV) maxV = v;
+    const lo = Math.log10(Math.max(maxV, 1e-12)) - topDb / 10;
+    const db = rows.map((r) => Array.from(r, (v) => Math.log10(Math.max(v, 1e-12))));
+
+    // 第四步：画到 canvas
+    const cv = $('spec'), ctx2 = cv.getContext('2d');
+    const W = cv.width, H = cv.height, L = 64, B = 30, T = 8, R = 8; // 边距
+    const plotW = W - L - R, plotH = H - T - B;
+    ctx2.fillStyle = '#000004';
+    ctx2.fillRect(0, 0, W, H);
+    const nR = rows.length;
+    for (let m = 0; m < nR; m++) {
+      for (let f = 0; f < frames; f++) {
+        const t01 = (db[m][f] - lo) / (topDb / 10);
+        ctx2.fillStyle = magma(t01);
+        const x = L + (f / frames) * plotW;
+        const y = T + (1 - (m + 1) / nR) * plotH;
+        ctx2.fillRect(x, y, plotW / frames + 0.8, plotH / nR + 0.8);
+      }
+    }
+
+    // 坐标轴
+    ctx2.fillStyle = '#94a3b8';
+    ctx2.font = '12px system-ui, sans-serif';
+    const dur = frames * hop / sr;
+    for (let s = 0; s <= dur; s += 0.5) {
+      const x = L + (s / dur) * plotW;
+      ctx2.fillText(s.toFixed(1) + 's', x - 8, H - 10);
+      ctx2.fillRect(x, T + plotH, 1, 4);
+    }
+    // 频率轴：梅尔模式均匀取梅尔刻度、线性模式均匀取 Hz
+    const fMaxActual = mode === 'mel' ? Math.min(fmax, sr / 2) : sr / 2;
+    const nTicks = 6;
+    for (let k = 0; k <= nTicks; k++) {
+      let hz;
+      if (mode === 'mel') hz = mel2hz((hz2mel(fMaxActual) * k) / nTicks);
+      else hz = (fMaxActual * k) / nTicks;
+      // 反查该 Hz 对应的行位置
+      let row = rowHz.findIndex((h) => h >= hz);
+      if (row < 0) row = nR - 1;
+      const y = T + (1 - row / nR) * plotH;
+      ctx2.fillText(hz >= 1000 ? (hz / 1000).toFixed(1) + 'k' : Math.round(hz), 6, y + 4);
+      ctx2.fillRect(L - 5, y, 4, 1);
+    }
+
+    const ms = performance.now() - t0;
+    $('readout').textContent =
+      `Δf = ${(sr / nFft).toFixed(1)} Hz（频率分辨率） · Δt = ${((hop / sr) * 1000).toFixed(1)} ms（时间分辨率） · ` +
+      `${frames} 帧 × ${nR} 频带 · 计算+绘图 ${ms.toFixed(0)} ms`;
+  }
+
+  function schedule() {
+    clearTimeout(timer);
+    timer = setTimeout(computeAndDraw, 120);
+  }
+
+  function syncLabels() {
+    $('hopVal').textContent = $('hopRange').value;
+    $('nmelVal').textContent = $('nmelRange').value;
+    $('fmaxVal').textContent = $('fmaxRange').value + ' Hz';
+    $('dbVal').textContent = '±' + $('dbRange').value + ' dB';
+    const isMel = $('modeSel').value === 'mel';
+    document.querySelectorAll('.melOnly').forEach((el) => (el.style.display = isMel ? '' : 'none'));
+  }
+
+  // 事件绑定
+  ['audioSel', 'modeSel', 'nfftSel', 'hopRange', 'nmelRange', 'fmaxRange', 'dbRange'].forEach((id) =>
+    $(id).addEventListener('input', () => { syncLabels(); schedule(); })
+  );
+  $('audioSel').addEventListener('change', async () => {
+    $('readout').textContent = '音频加载中…';
+    audio = await loadAudio($('audioSel').value);
+    computeAndDraw();
+  });
+
+  // 初始化
+  (async () => {
+    syncLabels();
+    audio = await loadAudio($('audioSel').value);
+    computeAndDraw();
+  })();
+</script>

@@ -1,14 +1,25 @@
 ---
 // ══════════════════════════════════════════════════════════════════
-// 语音频谱实验室：真伪语音对比 + 交互式频谱工具
+// 语音频谱实验室（/visualizer/）
 // ──────────────────────────────────────────────────────────────────
-// 前身是《用眼睛"听"出伪造语音》文章 + 独立小工具，现合并为一页。
-// 交互工具的核心（FFT、窗函数、梅尔滤波器组）全部手写，不依赖任何库。
+// 真伪语音对比实验 + 交互式频谱工具。
+// 交互工具的核心（FFT、窗函数、梅尔滤波器组、预加重）全部手写，不依赖任何库。
+// 旧地址 /mel-visualizer/ 已在 astro.config.mjs 里重定向到这里。
 // ══════════════════════════════════════════════════════════════════
 import BaseLayout from '../layouts/BaseLayout.astro';
 
-// 代码示例：放在 frontmatter 里再 set:html 注入，避免模板把 { } 当表达式解析
-const CODE_SAMPLE = `// ① 窗函数：不同窗在"主瓣宽度"和"旁瓣泄漏"之间取舍
+// 代码示例通过 set:html 注入：Astro 模板会把 HTML 里的 { } 当表达式解析，
+// 所以含花括号的代码必须放进 JS 字符串里再注入（这是一个经典的坑）。
+const CODE_JS = `// ========== 手写版（本页工具的实际实现，JavaScript）==========
+
+// ① 预加重：一阶高通滤波，补偿语音的高频滚降
+function preEmphasis(x, a) {
+  const y = new Float64Array(x.length);
+  for (let t = 1; t < x.length; t++) y[t] = x[t] - a * x[t - 1];
+  return y;
+}
+
+// ② 窗函数：不同窗在"主瓣宽度"和"旁瓣泄漏"之间取舍
 function makeWindow(type, N) {
   return Array.from({ length: N }, (_, n) => {
     const x = (2 * Math.PI * n) / N;
@@ -19,20 +30,109 @@ function makeWindow(type, N) {
   });
 }
 
-// ② radix-2 FFT：位反转重排 + 蝶形运算，O(N log N)
+// ③ radix-2 FFT：位反转重排 + 蝶形运算，O(N log N)
+function fft(re, im) {
+  const n = re.length;
+  for (let i = 1, j = 0; i < n; i++) {          // 位反转重排
+    let bit = n >> 1;
+    for (; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if (i < j) { [re[i], re[j]] = [re[j], re[i]]; [im[i], im[j]] = [im[j], im[i]]; }
+  }
+  for (let len = 2; len <= n; len <<= 1) {      // 蝶形运算
+    const ang = (-2 * Math.PI) / len;
+    const wRe = Math.cos(ang), wIm = Math.sin(ang);
+    for (let i = 0; i < n; i += len) {
+      let curRe = 1, curIm = 0;
+      for (let k = 0; k < len / 2; k++) {
+        const uRe = re[i+k], uIm = im[i+k];
+        const vRe = re[i+k+len/2]*curRe - im[i+k+len/2]*curIm;
+        const vIm = re[i+k+len/2]*curIm + im[i+k+len/2]*curRe;
+        re[i+k] = uRe+vRe;            im[i+k] = uIm+vIm;
+        re[i+k+len/2] = uRe-vRe;      im[i+k+len/2] = uIm-vIm;
+        const nRe = curRe*wRe - curIm*wIm;
+        curIm = curRe*wIm + curIm*wRe; curRe = nRe;
+      }
+    }
+  }
+}
 
-// ③ 梅尔滤波器组：HTK 刻度 m = 2595·log10(1 + f/700)
-//    在梅尔轴上等距放 n_mels+2 个三角形滤波器的中心，再映射回 Hz 加权求和`;
+// ④ 梅尔滤波器组：HTK 刻度 m = 2595·log10(1 + f/700)
+const hz2mel = (f) => 2595 * Math.log10(1 + f / 700);
+const mel2hz = (m) => 700 * (10 ** (m / 2595) - 1);
+function melFilterbank(nMels, nFft, sr, fmax) {
+  const nBins = nFft / 2 + 1;
+  const melHi = hz2mel(Math.min(fmax, sr / 2));
+  // 在梅尔轴上等距取 n_mels+2 个中心，映射回 Hz，做成三角形滤波器
+  const centers = Array.from({ length: nMels + 2 },
+    (_, i) => mel2hz((melHi * i) / (nMels + 1)));
+  const fb = Array.from({ length: nMels }, () => new Float64Array(nBins));
+  for (let m = 0; m < nMels; m++) {
+    const [left, mid, right] = [centers[m], centers[m+1], centers[m+2]];
+    for (let b = 0; b < nBins; b++) {
+      const f = (b * sr) / nFft;
+      if (f >= left && f <= mid && mid > left)      fb[m][b] = (f - left) / (mid - left);
+      else if (f > mid && f <= right && right > mid) fb[m][b] = (right - f) / (right - mid);
+    }
+  }
+  return fb;
+}
+
+// ⑤ 完整流水线：分帧 → 加窗 → FFT → 滤波器组 → 取 dB
+function spectrogram(x, sr, p) {
+  const win = makeWindow(p.winType, p.winLen);
+  const nBins = p.nFft / 2 + 1;
+  const frames = Math.floor((x.length - p.winLen) / p.hop) + 1;
+  const power = new Float64Array(frames * nBins);
+  const re = new Float64Array(p.nFft), im = new Float64Array(p.nFft);
+  for (let f = 0; f < frames; f++) {
+    re.fill(0); im.fill(0);
+    for (let i = 0; i < p.winLen; i++) re[i] = x[f*p.hop + i] * win[i];
+    fft(re, im);
+    for (let b = 0; b < nBins; b++) power[f*nBins + b] = re[b]**2 + im[b]**2;
+  }
+  // 梅尔滤波（线性谱模式则跳过这步直接用 power）
+  // ... 之后每个滤波器对 power 加权求和，再取 10·log10 并减去最大值 → 相对 dB
+}`;
+
+const CODE_PY = `# ========== librosa 版（Python，同样的流水线，一行一个零件）==========
+import librosa
+import numpy as np
+
+y, sr = librosa.load("LJ014-0227.wav", sr=22050)
+
+# ① 预加重（librosa 没有现成函数，手写一行）
+y = np.append(y[0], y[1:] - 0.97 * y[:-1])
+
+# ② + ③ + ⑤ 梅尔谱：分帧、汉宁窗、FFT、80 个梅尔滤波器，一步到位
+mel = librosa.feature.melspectrogram(
+    y=y, sr=sr, n_fft=1024,        # FFT 点数（补零后的长度）
+    hop_length=256,                 # 帧移
+    win_length=1024,                # 帧长（窗长），可比 n_fft 小
+    window="hann",                  # 窗函数："hann" / "hamming" / "blackman" / "boxcar"
+    n_mels=80, fmax=8000,           # 梅尔滤波器数、最高频率
+)
+mel_db = librosa.power_to_db(mel, ref=np.max)   # 功率 → 相对 dB
+
+# 线性 STFT 谱（等价于本工具的"线性频谱"模式）
+stft = np.abs(librosa.stft(y, n_fft=1024, hop_length=256, window="hann"))
+stft_db = librosa.amplitude_to_db(stft, ref=np.max)
+
+# 两个库的对应关系：
+#   本页 makeWindow()      ↔  window 参数
+#   本页 fft()             ↔  librosa.stft() 内部（底层是 pocketfft）
+#   本页 melFilterbank()   ↔  librosa.filters.mel()（默认 Slaney 刻度，略有差异）
+#   本页 preEmphasis()     ↔  手写 np.append 那一行`;
 ---
 
-<BaseLayout title="语音频谱实验室" description="真伪语音对比实验 + 交互式频谱工具（手写 FFT / 窗函数 / 梅尔滤波器组）">
+<BaseLayout title="语音频谱实验室" description="真伪语音对比实验 + 交互式频谱工具（手写 FFT / 窗函数 / 梅尔滤波器组 / 预加重）">
   <article class="prose lab">
 
     <h1>🎛️ 语音频谱实验室</h1>
     <p>
       同一位说话人念同一句话（LJSpeech 的 <code>LJ014-0227</code>），三个版本：
       <b>真实录音</b>、<b>MelGAN 声码器伪造</b>（2020 年前后）、<b>HiFi-GAN 声码器伪造</b>（现代神经声码器）。
-      先听、再看、再动手调参数——亲手验证"肉眼看图到底能不能分辨真伪"。
+      先听、再看、学原理、最后动手调参数——亲手验证"肉眼看图到底能不能分辨真伪"。
     </p>
 
     <h2>一、先听一听（建议戴耳机 🔊）</h2>
@@ -47,11 +147,11 @@ function makeWindow(type, N) {
 
     <h3>波形：三个版本几乎重合</h3>
     <p>内容相同、时长相同（3.6 秒），波形本来就该一样——<b>波形是"内容"的投影，成熟的伪造在内容层面毫无破绽</b>。</p>
-    ![真伪语音波形对比](/images/rvf-waveform.png)
+    <img src="/images/rvf-waveform.png" alt="真伪语音波形对比" loading="lazy" />
 
     <h3>线性频谱：高频区开始露马脚</h3>
     <p>MelGAN（中）的高频纹理更"平"——老式声码器的谐波和噪声结构更简单；HiFi-GAN（下）高频丰富得多，肉眼需要仔细找茬。</p>
-    ![真伪语音线性频谱对比](/images/rvf-stft.png)
+    <img src="/images/rvf-stft.png" alt="真伪语音线性频谱对比" loading="lazy" />
 
     <h3>梅尔谱：人耳视角，也是"快要看不出"的视角</h3>
     <p>梅尔刻度模拟人耳的频率感知（m = 2595·log₁₀(1 + f / 700)）。下面这组<b>数值证据</b>值得记进笔记本：</p>
@@ -63,17 +163,54 @@ function makeWindow(type, N) {
       </tbody>
     </table>
     <p>两个发现：① 两种伪造的梅尔谱都和真实<b>高度相关（0.98+）</b>；② <b>"伪造=高频弱"的直觉不总成立</b>——HiFi-GAN 的高频能量甚至超过真实录音，简单频段规律靠不住。</p>
-    ![真伪语音梅尔谱对比](/images/rvf-mel.png)
+    <img src="/images/rvf-mel.png" alt="真伪语音梅尔谱对比" loading="lazy" />
 
     <h3>差异图：把不同直接画出来</h3>
     <p>逐点相减（真实 − 伪造），两栏共用同一色标。MelGAN（左）差异区大而杂，HiFi-GAN（右）差异小且集中在细碎纹理——<b>伪造技术在进步，肉眼可见的破绽在收敛</b>。</p>
-    ![真伪梅尔谱差异图](/images/rvf-diff.png)
+    <img src="/images/rvf-diff.png" alt="真伪梅尔谱差异图" loading="lazy" />
 
-    <h2>三、动手：交互频谱工具</h2>
+    <h2>三、学前班：语音为什么要"切着看"？</h2>
+
+    <h3>3.1 分帧：因为语音是"非平稳信号"</h3>
     <p>
-      下面的工具在你的浏览器里<b>实时计算</b>频谱。核心算法——FFT（radix-2 蝶形）、四种窗函数、梅尔滤波器组——
-      全部手写实现，不依赖 librosa 或任何第三方库。
-      <b>推荐玩法</b>：打开「A/B 对照模式」，A 选真实、B 选 HiFi-GAN，同一套参数下逐帧对比。
+      傅里叶变换的隐含假设是信号频率成分<b>永远不变</b>，但语音恰恰相反——
+      一句话里元音、辅音、停塞轮番上场，频率成分每一毫秒都在变。
+      对整句做一次 FFT，得到的频谱是所有音素的"大杂烩"，完全看不出<b>什么时候</b>出现了什么频率。
+      <b>解法：把信号切成一小段一小段（帧），对每帧分别做 FFT——这就是"短时"傅里叶变换（STFT）。</b>
+      帧不能太长（频率内容会变掉）也不能太短（频率分辨率不够），语音里 20–40 ms 是经典折中。
+    </p>
+
+    <h3>3.2 加窗：因为"直接切段"会弄脏频谱</h3>
+    <p>
+      切段 = 从信号里"咔嚓"剪一段 = 乘上一个矩形窗。矩形窗的频谱是一个 sinc 函数——
+      主瓣之外拖着一长串<b>旁瓣</b>，能量从真实频率"泄漏"到周围频带，这叫<b>频谱泄漏</b>：
+      强谐波会把自己的"影子"洒满整个频谱，掩盖旁边的弱成分。
+      <b>解法：用边缘平滑衰减到 0 的窗（汉宁/汉明/布莱克曼），让截断处不再"猛剪"。</b>
+      代价是主瓣变宽——频率分辨率下降。<b>窗函数选择的本质：用一点分辨率，换大幅干净的频谱。</b>
+      在下面的工具里切到"矩形窗"，你就能亲眼看到泄漏。
+    </p>
+
+    <h3>3.3 帧移：为什么相邻帧要重叠？</h3>
+    <p>
+      窗函数把每帧<b>两端</b>的信号压到接近 0——如果一个帧接一个帧不重叠地切，
+      帧边界处的信息就被压没了。让相邻帧重叠（典型 50%–75%，
+      即帧移 = 帧长的 1/4 到 1/2），前一帧被压制的边界正好落在下一帧的中间，信息得以保留。
+    </p>
+
+    <h3>3.4 预加重：把"闷"的高音提上来</h3>
+    <p>
+      语音（尤其浊音）的频谱能量天然随频率升高而衰减（约每倍频程 −6 dB）——低频"轰隆隆"、高频"细若蚊蝇"。
+      传统管线在做谱分析前先过一阶高通滤波：<b>y[t] = x[t] − α·x[t−1]</b>（α 常取 0.95–0.97），
+      把高频"抬"起来，让动态范围更均匀，也顺便放大了辅音摩擦这类高频信息。
+      深度学习时代模型自己能学到频率补偿，很多端到端系统已省略这步——但理解它依然是理解传统管线的钥匙。
+      下面的工具里拖动"预加重"滑杆，看高频区亮起来。
+    </p>
+
+    <h2>四、动手：交互频谱工具</h2>
+    <p>
+      核心算法——预加重、FFT（radix-2 蝶形）、四种窗函数、梅尔滤波器组——全部手写实现，不依赖任何库。
+      <b>推荐玩法</b>：① 窗函数切到"矩形窗"看频谱泄漏；② 拖"预加重"看高频变亮；
+      ③ 打开「A/B 对照模式」，A 选真实、B 选 HiFi-GAN，同一套参数逐帧对比。
     </p>
 
     <div class="panel">
@@ -102,6 +239,7 @@ function makeWindow(type, N) {
             <option value="mel" selected>梅尔谱（人耳视角）</option>
             <option value="lin">线性频谱（物理视角）</option>
           </select>
+          <span class="hint">线性=物理频率等距；梅尔=低频细、高频粗（模拟人耳）</span>
         </label>
         <label>窗函数
           <select id="winSel">
@@ -110,9 +248,17 @@ function makeWindow(type, N) {
             <option value="blackman">布莱克曼窗 Blackman</option>
             <option value="boxcar">矩形窗（不加窗）</option>
           </select>
+          <span class="hint">矩形窗分辨率最高但泄漏大；布莱克曼最干净但主瓣最宽（见 3.2 节）</span>
+        </label>
+      </div>
+      <div class="row">
+        <label>预加重 α<span id="preemVal" class="val"></span>
+          <input type="range" id="preemRange" min="0" max="0.95" step="0.05" value="0" />
+          <span class="hint">一阶高通抬升高频；0.97 是传统经典值（见 3.4 节）</span>
         </label>
         <label>帧长（窗长）<span id="winlenVal" class="val"></span>
           <input type="range" id="winlenRange" min="128" max="4096" step="64" value="1024" />
+          <span class="hint">每帧取多长的信号；20–40 ms 是语音经典值（见 3.1 节）</span>
         </label>
         <label>n_fft（FFT 点数）<span id="nfftVal" class="val"></span>
           <select id="nfftSel">
@@ -120,20 +266,25 @@ function makeWindow(type, N) {
             <option selected>1024</option>
             <option>2048</option><option>4096</option>
           </select>
+          <span class="hint">≥ 帧长则补零。越大频率越细（Δf=sr/n_fft）、时间越糊——不确定性原理</span>
+        </label>
+        <label>帧移 hop<span id="hopVal" class="val"></span>
+          <input type="range" id="hopRange" min="64" max="1024" step="64" value="256" />
+          <span class="hint">相邻帧起点的距离；取帧长 1/4~1/2 保证重叠（见 3.3 节）</span>
         </label>
       </div>
       <div class="row">
-        <label>帧移 hop（跳步）<span id="hopVal" class="val"></span>
-          <input type="range" id="hopRange" min="64" max="1024" step="64" value="256" />
-        </label>
-        <label class="melOnly">n_mels（梅尔滤波器数）<span id="nmelVal" class="val"></span>
+        <label class="melOnly">n_mels（滤波器数）<span id="nmelVal" class="val"></span>
           <input type="range" id="nmelRange" min="16" max="256" step="4" value="80" />
+          <span class="hint">越多越接近线性谱；80 是 TTS 经典值</span>
         </label>
         <label class="melOnly">fmax（最高频率）<span id="fmaxVal" class="val"></span>
           <input type="range" id="fmaxRange" min="2000" max="11000" step="500" value="8000" />
+          <span class="hint">砍掉人耳不敏感的高频——梅尔谱"压缩"的精髓</span>
         </label>
         <label>动态范围<span id="dbVal" class="val"></span>
           <input type="range" id="dbRange" min="40" max="120" step="10" value="80" />
+          <span class="hint">最亮到最暗相差多少 dB；调小可以只看"主角"，调大看"群众演员"</span>
         </label>
       </div>
       <p class="readout" id="readout">加载中…</p>
@@ -146,23 +297,25 @@ function makeWindow(type, N) {
       <canvas id="specB" width="1040" height="400"></canvas>
     </div>
 
-    <details class="implNote">
-      <summary>🔬 本工具的手写实现（点开看核心代码）</summary>
-      <p>页面没有任何音频库，下面是三个核心部件的实现思路（完整代码在本页源码里）：</p>
-      <pre><code class="sample" set:html={CODE_SAMPLE}></code></pre>
-      <p>Python 版生成脚本（librosa 对照）在仓库 <code>scripts/make_real_vs_fake.py</code>——两边算出的谱应该一致，这也是一个很好的交叉验证练习。</p>
+    <h2>五、两种实现对照：手写 vs librosa</h2>
+    <p>
+      下面是<b>同一套流水线</b>的两份代码：左边是本页工具里真实运行的手写 JavaScript，
+      右边是 Python 世界里用 librosa 的等价写法。对照着读，你会发现 librosa 的每个参数都对应一个具体的手工步骤——
+      这正是"知其所以然"的过程。
+    </p>
+
+    <details class="implNote" open>
+      <summary>🖐️ 手写版（本页工具的实际实现，JavaScript）</summary>
+      <pre><code class="sample" set:html={CODE_JS}></code></pre>
     </details>
 
-    <h2>四、参数速查：每个旋钮在拧什么</h2>
-    <ul>
-      <li><b>帧长 / n_fft</b>：帧长决定"一次看多长的信号"；n_fft ≥ 帧长时不足的部分补零。n_fft 越大频率分得越细（Δf = sr/n_fft），但时间上越"糊"——不确定性原理的现场演示</li>
-      <li><b>帧移 hop</b>：相邻帧起点之间的距离，通常取帧长的 1/4 ~ 1/2（重叠 75% ~ 50%）。越大越稀疏，快速瞬态（爆破音）会丢</li>
-      <li><b>窗函数</b>：矩形窗频率分辨率最高但旁瓣泄漏大（"频谱拖尾"）；汉宁/汉明折中；布莱克曼旁瓣最低但主瓣最宽。切到矩形窗，你会看到谐波"底座"变脏——这就是频谱泄漏</li>
-      <li><b>n_mels</b>：梅尔滤波器个数。越多细节越多（越接近线性谱），80 是 TTS 的经典值</li>
-      <li><b>fmax</b>：人耳能量集中在低频，砍掉高频往往不损失听感信息——梅尔谱"压缩"的精髓</li>
-    </ul>
+    <details class="implNote">
+      <summary>🐍 librosa 版（Python，等价流水线）</summary>
+      <pre><code class="sample" set:html={CODE_PY}></code></pre>
+      <p>生成本页静态图片的脚本在仓库 <code>scripts/make_real_vs_fake.py</code>——用手写 JS 工具调出相同参数，两边谱图应当一致，这是一个很好的交叉验证练习。</p>
+    </details>
 
-    <h2>五、结论与数据集</h2>
+    <h2>六、结论与数据集</h2>
     <table>
       <thead><tr><th>可视化</th><th>能否看出真伪</th><th>说明</th></tr></thead>
       <tbody>
@@ -207,6 +360,13 @@ function makeWindow(type, N) {
   }
   .lab label.check { flex-direction: row; align-items: center; gap: 0.5rem; }
   .lab .val { color: var(--accent); font-weight: 600; }
+  /* 参数旁的提示文字（把原"参数速查"融入工具面板） */
+  .lab .hint {
+    font-size: 0.78rem;
+    color: #94a3b8;
+    max-width: 260px;
+    line-height: 1.5;
+  }
   .lab select {
     font: inherit;
     padding: 0.25rem 0.5rem;
@@ -233,6 +393,7 @@ function makeWindow(type, N) {
     font-weight: 600;
     margin: 0.8rem 0 0.3rem;
   }
+  .lab img { max-width: 100%; border-radius: 8px; }
   /* A/B 模式显示切换：默认隐藏 B 相关控件 */
   .lab .bOnlyInline { display: none; }
   .lab .bOnlyBlock { display: none; }
@@ -247,10 +408,19 @@ function makeWindow(type, N) {
     font-size: 0.92rem;
   }
   .lab .implNote summary { cursor: pointer; font-weight: 600; }
+  .lab .implNote pre { font-size: 0.8rem; }
 </style>
 
 <script>
   // ─────────────────── 手写 DSP 核心（无任何外部依赖）───────────────────
+
+  // 预加重：y[t] = x[t] − a·x[t−1]
+  function preEmphasis(x, a) {
+    const y = new Float64Array(x.length);
+    y[0] = x[0];
+    for (let t = 1; t < x.length; t++) y[t] = x[t] - a * x[t - 1];
+    return y;
+  }
 
   // 窗函数：矩形/汉宁/汉明/布莱克曼
   function makeWindow(type, N) {
@@ -355,24 +525,26 @@ function makeWindow(type, N) {
       nMels: parseInt($('nmelRange').value, 10),
       fmax: parseInt($('fmaxRange').value, 10),
       topDb: parseInt($('dbRange').value, 10),
+      preem: parseFloat($('preemRange').value),
       mode: $('modeSel').value,
       winType: $('winSel').value,
     };
   }
 
-  // 计算谱图矩阵（手写流程：分帧 → 加窗 → FFT → 滤波器组 → dB）
+  // 计算谱图矩阵（手写流程：预加重 → 分帧 → 加窗 → FFT → 滤波器组 → dB）
   function spectrogram(audio, p) {
-    const { data, sr } = audio;
+    const sr = audio.sr;
+    const x = p.preem > 0 ? preEmphasis(audio.data, p.preem) : audio.data;
     const nBins = p.nFft / 2 + 1;
     const win = makeWindow(p.winType, p.winLen);
-    const frames = Math.max(1, Math.floor((data.length - p.winLen) / p.hop) + 1);
+    const frames = Math.max(1, Math.floor((x.length - p.winLen) / p.hop) + 1);
     const re = new Float64Array(p.nFft), im = new Float64Array(p.nFft);
     const power = new Float64Array(frames * nBins);
 
     for (let f = 0; f < frames; f++) {
       const off = f * p.hop;
       re.fill(0); im.fill(0);
-      for (let i = 0; i < p.winLen; i++) re[i] = data[off + i] * win[i];
+      for (let i = 0; i < p.winLen; i++) re[i] = x[off + i] * win[i];
       fft(re, im);
       for (let b = 0; b < nBins; b++) power[f * nBins + b] = re[b] * re[b] + im[b] * im[b];
     }
@@ -462,7 +634,7 @@ function makeWindow(type, N) {
     $('labelB').textContent = 'B：' + AUDIO_NAMES[$('audioBSel').value];
     const ms = performance.now() - t0;
     $('readout').textContent =
-      `帧长 ${p.winLen} · 窗 ${p.winType} · n_fft ${p.nFft}${p.winLen < p.nFft ? '（补零）' : ''} · hop ${p.hop} · ` +
+      `预加重 α=${p.preem.toFixed(2)} · 帧长 ${p.winLen} · 窗 ${p.winType} · n_fft ${p.nFft}${p.winLen < p.nFft ? '（补零）' : ''} · hop ${p.hop} · ` +
       `Δf = ${(sr / p.nFft).toFixed(1)} Hz · Δt = ${((p.hop / sr) * 1000).toFixed(1)} ms · ` +
       `${specA.frames} 帧 × ${specA.db.length} 频带 · 计算${abOn ? '×2' : ''}+绘图 ${ms.toFixed(0)} ms`;
   }
@@ -479,11 +651,12 @@ function makeWindow(type, N) {
     $('dbVal').textContent = '±' + $('dbRange').value + ' dB';
     $('winlenVal').textContent = $('winlenRange').value;
     $('nfftVal').textContent = $('nfftSel').value;
+    $('preemVal').textContent = 'α=' + parseFloat($('preemRange').value).toFixed(2);
     const isMel = $('modeSel').value === 'mel';
     document.querySelectorAll('.melOnly').forEach((el) => (el.style.display = isMel ? '' : 'none'));
   }
 
-  ['modeSel', 'winSel', 'nfftSel', 'hopRange', 'winlenRange', 'nmelRange', 'fmaxRange', 'dbRange', 'abCheck'].forEach((id) =>
+  ['modeSel', 'winSel', 'nfftSel', 'hopRange', 'winlenRange', 'nmelRange', 'fmaxRange', 'dbRange', 'preemRange', 'abCheck'].forEach((id) =>
     $(id).addEventListener('input', () => { syncLabels(); schedule(); })
   );
   $('audioSel').addEventListener('change', async () => {

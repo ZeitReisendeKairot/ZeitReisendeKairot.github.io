@@ -19,4 +19,9 @@ export default defineConfig({
     remarkPlugins: [remarkMath],
     rehypePlugins: [rehypeKatex],
   },
+
+  // 旧地址 → 新地址（页面从 /mel-visualizer/ 改名为 /visualizer/）
+  redirects: {
+    '/mel-visualizer/': '/visualizer/',
+  },
 });

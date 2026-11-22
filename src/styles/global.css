@@ -244,6 +244,14 @@ h1, h2, h3, h4 { line-height: 1.35; }
   color: var(--muted);
 }
 
+/* 系列徽章：比普通标签醒目（主题色），表示文章属于某个系列（如「数学基础」） */
+.series-tag {
+  background: var(--accent-light);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
 /* 「草稿」徽章：琥珀色警示配色，一眼看出这篇文章还没发布 */
 .badge {
   display: inline-block;

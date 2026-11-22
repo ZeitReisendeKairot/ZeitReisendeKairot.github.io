@@ -9,10 +9,11 @@ interface Props {
   pubDate: Date;
   updatedDate?: Date;
   tags?: string[];
+  series?: string;
   draft?: boolean;
 }
 
-const { title, description, pubDate, updatedDate, tags = [], draft = false } = Astro.props;
+const { title, description, pubDate, updatedDate, tags = [], series, draft = false } = Astro.props;
 ---
 
 <BaseLayout title={title} description={description}>
@@ -21,6 +22,7 @@ const { title, description, pubDate, updatedDate, tags = [], draft = false } = A
       {draft && <span class="badge">草稿 · 仅本地预览可见</span>}
       <h1>{title}</h1>
       <div class="meta">
+        {series && <span class="tag series-tag">系列 · {series}</span>}
         <span>发布于 <FormattedDate date={pubDate} /></span>
         {updatedDate && (
           <span>更新于 <FormattedDate date={updatedDate} /></span>

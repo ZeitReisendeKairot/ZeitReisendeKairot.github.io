@@ -213,6 +213,17 @@ stft_db = librosa.amplitude_to_db(stft, ref=np.max)
       ③ 打开「A/B 对照模式」，A 选真实、B 选 HiFi-GAN，同一套参数逐帧对比。
     </p>
 
+    <details class="howto" open>
+      <summary>📖 频谱图怎么读？（横轴、纵轴、颜色各是什么）</summary>
+      <ul>
+        <li><b>横轴 = 时间</b>：从左到右就是这 3.6 秒声音的时间线。图上每一"列"像素，是一帧（几十毫秒）信号的频谱快照——所以频谱图又叫<b>时频图</b>：一列列频谱按时间排成的电影。</li>
+        <li><b>纵轴 = 频率</b>：底部是低频、顶部是高频。注意两种模式的刻度不同——<b>线性模式</b>物理频率等距排列（1000→2000Hz 和 5000→6000Hz 占同样的高度）；<b>梅尔模式</b>低频被拉宽、高频被压缩，模拟人耳"低频敏感、高频迟钝"的听觉。</li>
+        <li><b>颜色 = 能量强弱</b>：以整图最大能量为 0 dB 基准，越亮表示"这个时刻、这个频率"上的能量越强；黑色 ≈ 几乎没有能量。画布右侧的色条就是这把"温度计"——从顶端 0 dB（最亮）到底部 −N dB（N 由"动态范围"滑杆决定）。调小动态范围 = 拉高"亮度阈值"，只留主角；调大 = 连背景细节都看得见。</li>
+        <li><b>语音的典型图案</b>：横向的等间距亮线 = <b>谐波</b>（基频的整数倍，发元音时声带振动的指纹，最低那条亮线的走向就是基频/语调轨迹）；一团高频噪点 = <b>摩擦辅音</b>（s、sh）；竖直的宽带 = <b>爆破音</b>（b、p 的瞬间）。</li>
+        <li><b>线性还是梅尔？</b>：看伪造痕迹、查高频信息 → 线性谱（物理真相）；理解"人耳听到什么"、衔接 TTS 管线 → 梅尔谱（听觉视角）。</li>
+      </ul>
+    </details>
+
     <div class="panel">
       <div class="row">
         <label>音频 A
@@ -409,6 +420,17 @@ stft_db = librosa.amplitude_to_db(stft, ref=np.max)
   }
   .lab .implNote summary { cursor: pointer; font-weight: 600; }
   .lab .implNote pre { font-size: 0.8rem; }
+  /* "怎么读图"指南 */
+  .lab .howto {
+    background: #f8fafc;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.8rem 1.2rem;
+    margin: 1.2rem 0;
+    font-size: 0.92rem;
+  }
+  .lab .howto summary { cursor: pointer; font-weight: 600; }
+  .lab .howto li { margin: 0.5rem 0; }
 </style>
 
 <script>
@@ -581,7 +603,7 @@ stft_db = librosa.amplitude_to_db(stft, ref=np.max)
 
   function draw(canvas, spec, p, sr) {
     const ctx = canvas.getContext('2d');
-    const W = canvas.width, H = canvas.height, L = 64, B = 30, T = 8, R = 8;
+    const W = canvas.width, H = canvas.height, L = 64, B = 30, T = 8, R = 56; // 右侧留出色条位置
     const plotW = W - L - R, plotH = H - T - B;
     ctx.fillStyle = '#000004';
     ctx.fillRect(0, 0, W, H);
@@ -616,6 +638,29 @@ stft_db = librosa.amplitude_to_db(stft, ref=np.max)
       ctx.fillText(hz >= 1000 ? (hz / 1000).toFixed(1) + 'k' : Math.round(hz), 6, y + 4);
       ctx.fillRect(L - 5, y, 4, 1);
     }
+
+    // 色条：颜色 ↔ dB 对照尺（顶=0dB 最亮，底=−topDb）
+    const barX = W - 42, barW = 16;
+    for (let i = 0; i <= plotH; i++) {
+      ctx.fillStyle = magma(1 - i / plotH);
+      ctx.fillRect(barX, T + i, barW, 1.5);
+    }
+    ctx.strokeStyle = '#475569';
+    ctx.strokeRect(barX + 0.5, T + 0.5, barW, plotH);
+    ctx.fillStyle = '#94a3b8';
+    const step = p.topDb > 60 ? 20 : 10;
+    for (let d = 0; d <= p.topDb; d += step) {
+      const y = T + (d / p.topDb) * plotH;
+      ctx.fillText(d === 0 ? '0' : String(-d), barX + barW + 4, y + 4);
+      ctx.fillRect(barX - 3, y, 3, 1);
+    }
+    // 竖排的 dB 单位标签
+    ctx.save();
+    ctx.translate(barX - 14, T + plotH / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.textAlign = 'center';
+    ctx.fillText('能量 (dB，相对最大值)', 0, 0);
+    ctx.restore();
   }
 
   function render() {

@@ -144,6 +144,27 @@ stft_db = librosa.amplitude_to_db(stft, ref=np.max)
       对整句做一次 FFT，得到的频谱是所有音素的"大杂烩"，完全看不出<b>什么时候</b>出现了什么频率。
       <b>解法：把信号切成一小段一小段（帧），对每帧分别做 FFT——这就是"短时"傅里叶变换（STFT）。</b>
       帧不能太长（频率内容会变掉）也不能太短（频率分辨率不够），语音里 20–40 ms 是经典折中。
+
+    <div class="fbox">
+      <b>🧮 点数 ↔ 时间的换算：采样率是唯一的桥梁</b>
+      <p>采样率 sr = 每秒采集多少个<b>点</b>，所以 1 个点 = 1/sr 秒。所有"点数"和"时间"的换算都靠它：</p>
+      <ul>
+        <li>帧长（毫秒）= 帧长（点）÷ sr × 1000</li>
+        <li>帧移（毫秒）= hop（点）÷ sr × 1000</li>
+        <li>频率刻度间隔 Δf = sr ÷ n_fft（FFT 网格多密）</li>
+        <li><b>有效频率分辨率 ≈ sr ÷ 帧长（点）——这才是真实的物理分辨率，由窗内数据量决定</b></li>
+      </ul>
+      <p>
+        例：本页音频 sr = 22050 Hz → 帧长 1024 点 = 1024 ÷ 22050 × 1000 ≈ <b>46.4 ms</b>；
+        hop 256 点 ≈ <b>11.6 ms</b>；n_fft=1024 时刻度 Δf = 22050 ÷ 1024 ≈ <b>21.5 Hz</b>。<br />
+        行业常见配置：16 kHz 语音的"25 ms 窗、10 ms 帧移" = <b>400 点</b>窗、<b>160 点</b>移——你以后读论文时，点数和毫秒就这样互译。
+      </p>
+      <p>
+        ⚠️ <b>为什么只调大 n_fft 图几乎不变？</b>帧长不变时，n_fft 多出的部分只是给数据<b>补零</b>——
+        频谱刻度变密了（插值更平滑），但信息量没变，真实分辨率仍被帧长锁死。
+        想真正看清谐波：调大<b>帧长</b>（同时保证窗内语音平稳），并切到线性频谱。
+      </p>
+    </div>
     </p>
 
     <h3>3.2 加窗：因为"直接切段"会弄脏频谱</h3>
@@ -235,7 +256,7 @@ stft_db = librosa.amplitude_to_db(stft, ref=np.max)
         </label>
         <label>帧长（窗长）<span id="winlenVal" class="val"></span>
           <input type="range" id="winlenRange" min="128" max="4096" step="64" value="1024" />
-          <span class="hint">每帧取多长的信号；20–40 ms 是语音经典值（见 3.1 节）</span>
+          <span class="hint">真正决定频率分辨率的量：有效Δf ≈ sr÷帧长；帧长(ms) = 帧长(点)÷sr×1000（换算表见 3.1）</span>
         </label>
         <label>n_fft（FFT 点数）<span id="nfftVal" class="val"></span>
           <select id="nfftSel">
@@ -243,11 +264,11 @@ stft_db = librosa.amplitude_to_db(stft, ref=np.max)
             <option selected>1024</option>
             <option>2048</option><option>4096</option>
           </select>
-          <span class="hint">≥ 帧长则补零。越大频率越细（Δf=sr/n_fft）、时间越糊——不确定性原理</span>
+          <span class="hint">FFT 刻度密度（Δf = sr÷n_fft）。超过帧长的部分只是补零插值——帧长不变时调大它，图几乎不变！真实分辨率看帧长</span>
         </label>
         <label>帧移 hop<span id="hopVal" class="val"></span>
           <input type="range" id="hopRange" min="64" max="1024" step="64" value="256" />
-          <span class="hint">相邻帧起点的距离；取帧长 1/4~1/2 保证重叠（见 3.3 节）</span>
+          <span class="hint">帧移(ms) = hop(点)÷sr×1000；取帧长 1/4~1/2 保证重叠（见 3.3 节）</span>
         </label>
       </div>
       <div class="row">
@@ -397,6 +418,16 @@ stft_db = librosa.amplitude_to_db(stft, ref=np.max)
   }
   .lab .howto summary { cursor: pointer; font-weight: 600; }
   .lab .howto li { margin: 0.5rem 0; }
+  /* 公式速算框 */
+  .lab .fbox {
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 10px;
+    padding: 0.8rem 1.2rem;
+    margin: 1rem 0;
+    font-size: 0.92rem;
+  }
+  .lab .fbox li { margin: 0.3rem 0; }
 </style>
 
 <script>
@@ -645,8 +676,9 @@ stft_db = librosa.amplitude_to_db(stft, ref=np.max)
     $('labelB').textContent = 'B：' + AUDIO_NAMES[$('audioBSel').value];
     const ms = performance.now() - t0;
     $('readout').textContent =
-      `预加重 α=${p.preem.toFixed(2)} · 帧长 ${p.winLen} · 窗 ${p.winType} · n_fft ${p.nFft}${p.winLen < p.nFft ? '（补零）' : ''} · hop ${p.hop} · ` +
-      `Δf = ${(sr / p.nFft).toFixed(1)} Hz · Δt = ${((p.hop / sr) * 1000).toFixed(1)} ms · ` +
+      `预加重 α=${p.preem.toFixed(2)} · 窗 ${p.winType} · 帧长 ${p.winLen} 点 (${((p.winLen / sr) * 1000).toFixed(1)} ms) · ` +
+      `n_fft ${p.nFft}${p.winLen < p.nFft ? '（补零）' : ''} · hop ${p.hop} 点 (${((p.hop / sr) * 1000).toFixed(1)} ms) · ` +
+      `刻度Δf = ${(sr / p.nFft).toFixed(1)} Hz · 有效Δf ≈ ${(sr / p.winLen).toFixed(1)} Hz（由帧长决定） · ` +
       `${specA.frames} 帧 × ${specA.db.length} 频带 · 计算${abOn ? '×2' : ''}+绘图 ${ms.toFixed(0)} ms`;
   }
 

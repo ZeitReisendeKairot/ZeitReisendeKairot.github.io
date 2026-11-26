@@ -1,0 +1,64 @@
+---
+// 单个专栏页：按时间顺序列出该系列的所有章节
+import { getCollection } from 'astro:content';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import FormattedDate from '../../components/FormattedDate.astro';
+import { seriesSlug } from '../../consts';
+
+export async function getStaticPaths() {
+  const allPosts = await getCollection('blog', ({ data }) => import.meta.env.DEV || !data.draft);
+  const bySeries = new Map<string, typeof allPosts>();
+  for (const post of allPosts) {
+    if (!post.data.series) continue;
+    const arr = bySeries.get(post.data.series) ?? [];
+    arr.push(post);
+    bySeries.set(post.data.series, arr);
+  }
+  return [...bySeries.entries()].map(([name, posts]) => ({
+    params: { slug: seriesSlug(name) },
+    props: {
+      name,
+      posts: posts.slice().sort((a, b) => a.data.pubDate.valueOf() - b.data.pubDate.valueOf()),
+    },
+  }));
+}
+
+const { name, posts } = Astro.props;
+---
+
+<BaseLayout title={`专栏：${name}`} description={`${name}系列学习笔记`}>
+  <article class="prose">
+    <header class="post-header">
+      <span class="tag series-tag">专栏</span>
+      <h1>《{name}》</h1>
+      <div class="meta"><span>{posts.length} 篇笔记 · 按发布顺序排列</span></div>
+    </header>
+
+    <ul class="post-list">
+      {posts.map((post, i) => (
+        <li class="post-item">
+          <h2>
+            <span class="chapter-no">第 {i + 1} 篇</span>
+            <a href={`/blog/${post.id}/`}>{post.data.title}</a>
+          </h2>
+          <div class="meta-line">
+            <FormattedDate date={post.data.pubDate} />
+            {post.data.tags.map((tag) => <span class="tag">#{tag}</span>)}
+          </div>
+          <p class="desc">{post.data.description}</p>
+        </li>
+      ))}
+    </ul>
+
+    <p><a href="/series/">← 返回全部专栏</a></p>
+  </article>
+</BaseLayout>
+
+<style>
+  .chapter-no {
+    color: var(--muted);
+    font-size: 0.85rem;
+    font-weight: 400;
+    margin-right: 0.5rem;
+  }
+</style>

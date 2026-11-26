@@ -1,0 +1,45 @@
+---
+// 专栏总目录：汇总所有 series，每个专栏一张卡片
+import { getCollection } from 'astro:content';
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { seriesSlug } from '../consts';
+
+const allPosts = await getCollection('blog', ({ data }) => import.meta.env.DEV || !data.draft);
+const bySeries = new Map<string, typeof allPosts>();
+for (const post of allPosts) {
+  if (!post.data.series) continue;
+  const arr = bySeries.get(post.data.series) ?? [];
+  arr.push(post);
+  bySeries.set(post.data.series, arr);
+}
+const seriesList = [...bySeries.entries()].map(([name, posts]) => ({
+  name,
+  slug: seriesSlug(name),
+  count: posts.length,
+  latest: posts.slice().sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf())[0],
+}));
+---
+
+<BaseLayout title="专栏" description="按系列组织的学习笔记专栏">
+  <article class="prose">
+    <h1>📚 学习专栏</h1>
+    <p>
+      按主题成系列的学习笔记。每个专栏是一个持续更新的知识体系——
+      写新笔记时在 frontmatter 里带上 <code>series: '专栏名'</code>，就会自动出现在对应专栏里。
+    </p>
+
+    {seriesList.length === 0 && <p>还没有任何专栏，快写下第一篇吧。</p>}
+
+    <ul class="post-list">
+      {seriesList.map((s) => (
+        <li class="post-item">
+          <h2><a href={`/series/${s.slug}/`}>《{s.name}》</a></h2>
+          <div class="meta-line">
+            <span>{s.count} 篇笔记</span>
+            {s.latest && <span>最近更新：<a href={`/blog/${s.latest.id}/`}>{s.latest.data.title}</a></span>}
+          </div>
+        </li>
+      ))}
+    </ul>
+  </article>
+</BaseLayout>

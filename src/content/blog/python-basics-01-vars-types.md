@@ -247,7 +247,42 @@ t = t.upper()        # 必须接住返回值，t 才变成 "CAT"
 
 为什么这么设计？① 安全（做字典 key、函数参数时内容不会被偷改）；② 可共享（多处引用同一份，省内存）。对比：**list 是可变的**，`nums[0] = 9` 直接原地生效。
 
-## 九、字符串方法全家桶：分割、连接、查找、判断
+## 九、什么能当 dict 的 key？——可哈希性
+
+```python
+d = {"name": "tom"}     # str   作 key ✓
+d2 = {(1, 2): "point"}  # tuple 作 key ✓
+d3 = {[1, 2]: "list"}   # TypeError: unhashable type: 'list' ✗
+```
+
+dict 内部是一张**哈希表**：每个 key 都会被算成一个"指纹"（哈希值），凭指纹决定它存进哪个格子、从哪个格子取。所以对 key 只有一条要求——**可哈希（hashable）**：
+
+> **key 的哈希值终生不能变。**
+
+- `str`、`int`、`float`、`bool`、`tuple`（且元素也可哈希）：不可变 → 指纹稳定 → ✓
+- `list`、`dict`、`set`：可变——今天算的指纹明天就作废，存进去的东西会"找不到家" → ✗
+
+这正是上一节"不可变"的用武之地：**不可变 → 哈希稳定 → 能当 key**，两件事是一件事。
+
+```python
+hash("cat")        # 一个整数（每次"运行程序"可能不同，但同一次运行内永远一致）
+hash((1, 2))       # ✓ 元组不可变，可哈希
+hash([1, 2])       # TypeError！列表可变，不可哈希
+hash((1, [2]))     # TypeError！元组本身不可变，但里面装着列表也不行
+```
+
+set 的成员资格判断同理（内部也是哈希表）：`{[1, 2]}` 同样报错。
+
+实用技巧：
+
+```python
+points = set()          # 想用"坐标列表"查重？
+p = [1, 2]
+points.add(tuple(p))    # 先转 tuple 再存 ✓
+# frozenset 是"冻结集合"，同样可哈希，能当 key
+```
+
+## 十、字符串方法全家桶：分割、连接、查找、判断
 
 ### 分割与连接
 
@@ -286,7 +321,7 @@ s.replace("Python", "World")  # "Hello World"（返回新串，见"不可变"）
 
 > 坑一枚：`isalpha` 对**中文也返回 True**（`"中文".isalpha() == True`），因为它判断的是"字母类字符"而非"英文字母"。判断 ASCII 字母用 `"abc".isascii() and "abc".isalpha()`。
 
-## 十、类型转换与进制
+## 十一、类型转换与进制
 
 ### 基本转换
 
@@ -331,6 +366,102 @@ int(bin(5), 2)    # 5 —— bin 和 int(s, 2) 互为逆操作
 
 位运算题（LeetCode 190 颠倒二进制位、136 只出现一次的数字）全靠这套转换 + `s[::-1]` 反转。
 
+## 陷阱挑战：不简单的题（先猜，再跑）
+
+### A. 输出判断
+
+**A1.** 小整数的缓存
+
+```python
+a, b = 256, 256
+c, d = 257, 257
+a is b, c is d     # ？
+```
+
+**A2.** 元组里的列表
+
+```python
+t = (1, [2, 3])
+t[1] += [4]        # 会发生什么？t 变了吗？
+```
+
+**A3.** 银行家舍入连击
+
+```python
+round(0.5) + round(1.5) + round(2.5)   # ？
+```
+
+**A4.** falsy 等于 False 吗
+
+```python
+[] == False         # ？
+bool([])            # ？
+```
+
+**A5.** 切片与索引的越界
+
+```python
+s = "abc"
+s[5:100]            # ？
+s[5]                # ？
+```
+
+**A6.** 两个名字一个对象
+
+```python
+x = [1, 2, 3]
+y = x
+y += [4]            # x 变了吗？
+z = x
+z = z + [5]         # 这次 x 变吗？
+```
+
+**A7.** True 和 1 是同一个 key 吗
+
+```python
+d = {}
+d[True] = "yes"
+d[1] = "one"
+len(d)              # ？
+```
+
+### B. 编程小题（只用本篇知识）
+
+**B1.** 回文判断：忽略大小写和非字母数字字符（LeetCode 125）。
+**B2.** 列表去重且**保持原顺序**。
+**B3.** 十进制转任意进制（2–16），负数带负号（LeetCode 504 思路）。
+
+> **答案**
+>
+> **A1**：`(True, False)`。CPython 把 −5~256 的小整数缓存复用，257 是新建对象。教训：**`is` 比"同一个对象"，`==` 比"值相等"**——日常判断值一律用 `==`，`is` 只留给 `None` / `True` / `False`（缓存是实现细节，勿依赖）。
+> **A2**：抛 `TypeError`（元组不可变）**但 `t` 已经变成 `(1, [2, 3, 4])`**！`+=` 先对列表原地追加（成功），再试图把新列表塞回元组槽位（失败）——一半成功一半失败，最阴险的坑。教训：别把可变对象装进"不可变"容器。
+> **A3**：`4`（0 + 2 + 2，五成双）。
+> **A4**：`False`、`False`。空列表在布尔上下文是 falsy，但 `== False` 并不相等——**falsy ≠ 等于 False**（`==` 不做布尔转换）。
+> **A5**：`''`（切片越界安全返回空串）、`IndexError`（索引越界报错）。
+> **A6**：`+=` 原地修改 → `x = [1, 2, 3, 4]`；`z = z + [5]` 创建新列表再贴名字 → `x` 不受影响。**Python 变量是"名字标签"不是"盒子"**：`y = x` 是两个标签贴同一个对象。
+> **A7**：`1`！`True == 1` 且 `hash(True) == hash(1)`，是同一个 key，后者覆盖前者——bool 是 int 子类的铁证现场。
+>
+> **B1**：
+> ```python
+> def is_palindrome(s: str) -> bool:
+>     clean = "".join(c.lower() for c in s if c.isalnum())
+>     return clean == clean[::-1]
+> ```
+> **B2**：`list(dict.fromkeys(nums))`——dict 的 key 可哈希且去重，Python 3.7+ 字典保持插入顺序。set 不行（无序）。
+> **B3**：
+> ```python
+> def to_base(n: int, b: int) -> str:
+>     if n == 0:
+>         return "0"
+>     digits = "0123456789abcdef"
+>     sign = "-" if n < 0 else ""
+>     n = abs(n)
+>     out = []
+>     while n:
+>         n, r = divmod(n, b)     # 一式拿商和余数
+>         out.append(digits[r])
+>     return sign + "".join(reversed(out))
+> ```
 ## 自测小练习（不看上文，能全答对吗？）
 
 1. `type(True) is bool` 和 `isinstance(True, bool)` 各是什么？`isinstance(True, int)` 呢？
@@ -343,9 +474,9 @@ int(bin(5), 2)    # 5 —— bin 和 int(s, 2) 互为逆操作
 
 > 答案：① True / True / True（bool 是 int 子类）② -4 和 1（floor 向负无穷，余数跟除数符号）③ 2（五成双）④ `from math import isclose; isclose(0.1+0.2, 0.3)` ⑤ `['a', '', 'b']` ⑥ `'bc'` 和 `'dcba'` ⑦ `list(set([1,1,2,2,3]))`（注意 set 无序）
 
-## 下一篇预告
+## 下一篇
 
-《Python 基础 02》计划记录：列表/字典/集合的增删改查与坑（可变默认参数、浅拷贝深拷贝）、`sorted` 与 `sort`、推导式。学到哪补到哪。
+[《Python 基础 02：控制流——选择、循环与双指针初探》](/blog/python-basics-02-control-flow/)已发布。容器与函数的坑（可变默认参数、浅拷贝深拷贝）排在 03。
 
 ---
 

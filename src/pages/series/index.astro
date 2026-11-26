@@ -1,8 +1,8 @@
 ---
 // 专栏总目录：汇总所有 series，每个专栏一张卡片
 import { getCollection } from 'astro:content';
-import BaseLayout from '../layouts/BaseLayout.astro';
-import { seriesSlug } from '../consts';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { seriesSlug } from '../../consts';
 
 const allPosts = await getCollection('blog', ({ data }) => import.meta.env.DEV || !data.draft);
 const bySeries = new Map<string, typeof allPosts>();

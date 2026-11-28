@@ -240,7 +240,7 @@ def binary_search(nums: list[int], target: int) -> int:
 
 ## 下一篇
 
-候选主题：容器进阶（列表/字典的坑、浅拷贝深拷贝）或函数（可变默认参数、传参语义）——学到哪写哪。第一道 LeetCode 正式题解也会单开一篇记录。
+[《Python 基础 03：函数——参数、作用域与递归》](/blog/python-basics-03-functions/)已发布。容器进阶（浅拷贝/深拷贝、推导式）与第一篇 LeetCode 正式题解排队中。
 
 ---
 
